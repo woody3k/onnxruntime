@@ -108,6 +108,7 @@ if (onnxruntime_BUILD_WEBASSEMBLY_STATIC_LIB)
       onnxruntime_mlas
       onnxruntime_optimizer
       onnxruntime_providers
+      ${PROVIDERS_JS}
       ${PROVIDERS_XNNPACK}
       onnxruntime_session
       onnxruntime_util
@@ -172,6 +173,7 @@ else()
     onnxruntime_mlas
     onnxruntime_optimizer
     onnxruntime_providers
+    ${PROVIDERS_JS}
     ${PROVIDERS_XNNPACK}
     onnxruntime_session
     onnxruntime_util
@@ -201,6 +203,10 @@ else()
                         -s NO_FILESYSTEM=1                                          \
                         --closure 1                                                 \
                         --no-entry")
+
+  if (onnxruntime_USE_JS)
+    set_property(TARGET onnxruntime_webassembly APPEND_STRING PROPERTY LINK_FLAGS " --pre-js \"${ONNXRUNTIME_ROOT}/wasm/js_internal_api.js\"")
+  endif()
 
   if (onnxruntime_EMSCRIPTEN_SETTINGS)
     foreach(setting IN LISTS onnxruntime_EMSCRIPTEN_SETTINGS)
