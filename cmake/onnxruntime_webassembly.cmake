@@ -191,7 +191,7 @@ else()
 
   set_target_properties(onnxruntime_webassembly PROPERTIES LINK_FLAGS "             \
                         -s \"EXPORTED_RUNTIME_METHODS=${EXPORTED_RUNTIME_METHODS}\" \
-                        -s \"EXPORTED_FUNCTIONS=_malloc,_free,_JsepOutput\"                     \
+                        -s \"EXPORTED_FUNCTIONS=_malloc,_free,_JsepOutput\"         \
                         -s MAXIMUM_MEMORY=4294967296                                \
                         -s WASM=1                                                   \
                         -s NO_EXIT_RUNTIME=0                                        \
@@ -201,7 +201,9 @@ else()
                         -s LLD_REPORT_UNDEFINED                                     \
                         -s VERBOSE=0                                                \
                         -s NO_FILESYSTEM=1                                          \
-                        --closure 1                                                 \
+                        -s ASYNCIFY=1                                               \
+                        -s ASYNCIFY_STACK_SIZE=8192                                 \
+                        -s ASYNCIFY_ADVISE=1 -s ASYNCIFY_DEBUG=2 -s ASYNCIFY_IGNORE_INDIRECT=0 -s ASYNCIFY_REMOVE=OrtInit \
                         --no-entry")
 
   if (onnxruntime_USE_JS)
