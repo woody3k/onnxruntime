@@ -6,6 +6,8 @@
 #include <vector>
 #include "contrib_ops/cpu/transformers/greedy_search_impl_base.h"
 
+#define DEBUG_GENERATION 1
+
 namespace onnxruntime {
 namespace contrib {
 
@@ -144,6 +146,20 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
   OrtValue expanded_input_ids_in_cpu;
   ORT_RETURN_IF_ERROR(CreateInitialFeeds(greedy_state.sequence_lengths, expanded_input_ids_in_cpu, feeds, buffer));
 
+  // int layers = 12; // TODO
+  // int num_heads = 12; // TODO
+
+  // // TODO, move it the CreateInitialFeeds
+  // auto past_type = std::is_same<T, float>().value ? DataTypeImpl::GetType<float>() : DataTypeImpl::GetType<MLFloat16>();
+  // int64_t past_state_dims[] = {2, parameters->batch_size, num_heads, parameters->max_length, parameters->head_size};
+  // TensorShape past_shape(&past_state_dims[0], 5);
+  // std::vector<OrtValue> past_present_tensors_(layers);
+  // fetches.
+  // for (int i = 0; i < layers; i++) {
+  //   Tensor::InitOrtValue(past_type, past_shape, this->temp_space_allocator_, past_present_tensors_[i]);
+  //   feeds[3+i] = past_present_tensors_[i];
+  // }
+  // CreateTensorWithDataAsOrtValue
   init_greedy_state_func_(&greedy_state,
                           greedy_state.sequence_lengths,
                           this->cuda_stream_);
@@ -178,6 +194,7 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
     dumper->Print("input_ids", feeds[0]);
     dumper->Print("position_ids", feeds[1]);
     dumper->Print("attention_mask", feeds[2]);
+    dumper->Print("past", feeds[3]);
 #endif
 
     status = utils::ExecuteSubgraph(this->decoder_session_state_,
@@ -188,16 +205,17 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
                                     ExecutionMode::ORT_SEQUENTIAL,
                                     this->context_.GetTerminateFlag(),
                                     this->context_.Logger());
-
     ORT_RETURN_IF_ERROR(status);
 
     const OrtValue& logits = fetches[0];
     gsl::span<int32_t> next_tokens;
+
     ORT_RETURN_IF_ERROR(this->GenerateNextToken(logits,
                                                 next_tokens,
                                                 greedy_state,
                                                 iteration_counter,
                                                 parameters->eos_token_id));
+
     // When all batches are finished, stop earlier to avoid wasting computation.
     gsl::span<bool>& eos_meet = greedy_state.eos_meet;
     size_t batch_id = 0;
@@ -217,6 +235,7 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
     // Prepare inputs for next round of subgraph call.
     if (current_length < parameters->max_length) {
       bool increase_position = (iteration_counter > 1);
+
       ORT_RETURN_IF_ERROR(UpdateFeeds(fetches, feeds, current_length,
                                       position_ids, increase_position,
                                       next_tokens.as_span<const int32_t>()));

@@ -14,6 +14,8 @@
 #include "contrib_ops/cuda/transformers/dump_cuda_tensor.h"
 #include "contrib_ops/cpu/transformers/subgraph_t5_decoder.h"
 #include "contrib_ops/cpu/transformers/subgraph_gpt.h"
+#include "core/providers/cuda/nvtx_profile.h"
+#include "core/providers/cuda/nvtx_profile_context.h"
 
 namespace onnxruntime {
 namespace concurrency {
@@ -33,6 +35,13 @@ Status TopK(const Tensor* input, const int axis, const unsigned k, bool largest,
             onnxruntime::concurrency::ThreadPool* /*threadpool*/,
             Tensor& output_values,
             Tensor& output_indices) {
+
+#ifdef ENABLE_NVTX_PROFILE
+    cudaDeviceSynchronize();
+    profile::NvtxNestedRangeCreator topkRange("TopK", profile::Color::Green);
+    topkRange.Begin();
+#endif
+
   ORT_ENFORCE(nullptr != input);
   int32_t rank = static_cast<int32_t>(input->Shape().NumDimensions());
 
@@ -55,7 +64,7 @@ Status TopK(const Tensor* input, const int axis, const unsigned k, bool largest,
   output_indices = std::move(*Tensor::Create(DataTypeImpl::GetType<int64_t>(), output_shape, std::move(allocator)));
 
   if (input->IsDataType<float>()) {
-    return TopKImpl<float>(nullptr,  // We limit number of beams in BeamSearchParameters, so K <= 256 and use NULL here
+    auto result = TopKImpl<float>(nullptr,  // We limit number of beams in BeamSearchParameters, so K <= 256 and use NULL here
                            reinterpret_cast<cudaStream_t>(stream),
                            input->Data<float>(),
                            static_cast<float*>(output_values.MutableDataRaw()),
@@ -68,8 +77,9 @@ Status TopK(const Tensor* input, const int axis, const unsigned k, bool largest,
                            static_cast<int64_t>(sorted),
                            N,
                            dimension);
+    return result;
   } else if (input->IsDataType<MLFloat16>()) {
-    return TopKImpl<MLFloat16>(nullptr,
+    auto result = TopKImpl<MLFloat16>(nullptr,
                                reinterpret_cast<cudaStream_t>(stream),
                                input->Data<MLFloat16>(),
                                static_cast<MLFloat16*>(output_values.MutableDataRaw()),
@@ -82,7 +92,13 @@ Status TopK(const Tensor* input, const int axis, const unsigned k, bool largest,
                                static_cast<int64_t>(sorted),
                                N,
                                dimension);
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    topkRange.End();
+#endif
+    return result;
   }
+
 
   return ORT_MAKE_STATUS(ONNXRUNTIME, NOT_IMPLEMENTED,
                          "BeamSearch op: An implementation for the input type ",
@@ -93,6 +109,13 @@ Status AddToFeeds(const IExecutionProvider* execution_provider,
                   std::initializer_list<OrtValue> inputs,
                   std::vector<OrtValue>& feeds,
                   IAllocatorUniquePtr<char>& buffer) {
+
+#ifdef ENABLE_NVTX_PROFILE
+  // cudaDeviceSynchronize();
+  profile::NvtxNestedRangeCreator addToFeedsRange("AddToFeeds", profile::Color::Blue);
+  addToFeedsRange.Begin();
+#endif
+
   // Copy tensors to GPU, then add to feeds
   const CUDAExecutionProvider* provider = reinterpret_cast<const CUDAExecutionProvider*>(execution_provider);
   size_t total_bytes = 0;
@@ -161,6 +184,11 @@ Status AddToFeeds(const IExecutionProvider* execution_provider,
     }
   }
 
+#ifdef ENABLE_NVTX_PROFILE
+  // cudaDeviceSynchronize();
+  addToFeedsRange.End();
+#endif
+
   return Status::OK();
 }
 
@@ -170,6 +198,12 @@ void InitBeamState(transformers::IBeamSearchState<T>* beam_state,
                    int batch_size,
                    int num_beams,
                    void* stream) {
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    profile::NvtxNestedRangeCreator initStateRange("InitBeamState", profile::Color::Red);
+    initStateRange.Begin();
+#endif
+
   // TODO(tianleiwu): we can use another stream to avoid blocking subgraph execution.
   cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
   cudaMemsetAsync(beam_state->next_token_logits.data(), 0, beam_state->next_token_logits.size_bytes(), cuda_stream);
@@ -186,18 +220,35 @@ void InitBeamState(transformers::IBeamSearchState<T>* beam_state,
     cudaMemcpyAsync(beam_state->next_positions.data(), sequence_lengths.data(), sequence_lengths.size_bytes(),
                     cudaMemcpyHostToDevice, cuda_stream);
   }
+
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    initStateRange.End();
+#endif
+
 }
 
 template <typename T>
 void InitGreedyState(transformers::IGreedySearchState<T>* greedy_state,
                      gsl::span<int32_t>& sequence_lengths,
                      void* stream) {
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    profile::NvtxNestedRangeCreator initStateRange("InitGreedyState", profile::Color::Red);
+    initStateRange.Begin();
+#endif
+
   cudaStream_t cuda_stream = reinterpret_cast<cudaStream_t>(stream);
   cudaMemsetAsync(greedy_state->next_token_scores.data(), 0, greedy_state->next_token_scores.size_bytes(), cuda_stream);
   cudaMemsetAsync(greedy_state->next_positions.data(), 0, greedy_state->next_positions.size_bytes(), cuda_stream);
 
   cudaMemcpyAsync(greedy_state->next_positions.data(), sequence_lengths.data(), sequence_lengths.size_bytes(),
                   cudaMemcpyHostToDevice, cuda_stream);
+
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    initStateRange.End();
+#endif
 }
 
 template <typename T>
@@ -213,6 +264,12 @@ Status ProcessLogits(const OrtValue& logits,                                 // 
                      int step,                                               // iteration counter
                      void* stream,                                           // cuda stream (for CUDA only)
                      const transformers::IConsoleDumper* dumper) {           // tensor dumper
+
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    profile::NvtxNestedRangeCreator processLogitsRange("ProcessLogits", profile::Color::Red);
+    processLogitsRange.Begin();
+#endif
 
   ORT_UNUSED_PARAMETER(logits_processors);
 
@@ -404,6 +461,12 @@ Status ProcessLogits(const OrtValue& logits,                                 // 
       next_scores,
       next_tokens,
       next_indices);
+
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    processLogitsRange.End();
+#endif
+
   return Status::OK();
 }
 
@@ -419,6 +482,14 @@ Status GreedySearchProcessLogits(
     int step,                                               // iteration counter
     void* stream,                                           // cuda stream (for CUDA only)
     const transformers::IConsoleDumper* dumper) {           // tensor dumper
+
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    profile::NvtxNestedRangeCreator processLogitsRange("ProcessLogits", profile::Color::Red);
+    processLogitsRange.Begin();
+#endif
+
+
   ORT_UNUSED_PARAMETER(logits_processors);
 
 #ifndef DEBUG_GENERATION
@@ -536,6 +607,12 @@ Status GreedySearchProcessLogits(
 #ifdef DEBUG_GENERATION
   dumper->Print("greedy_state->next_tokens", greedy_state->next_tokens.data(), batch_size, 1);
 #endif
+
+#ifdef ENABLE_NVTX_PROFILE
+    // cudaDeviceSynchronize();
+    processLogitsRange.End();
+#endif
+
   return Status::OK();
 }
 
@@ -651,6 +728,13 @@ Status UpdateGptFeeds(
     int num_beams,
     int gpt_subgraph_first_past_input_idx,
     int gpt_subgraph_first_present_output_idx) {
+
+#ifdef ENABLE_NVTX_PROFILE
+      // cudaDeviceSynchronize();
+      profile::NvtxNestedRangeCreator updateFeedsRange("UpdateGptFeeds", profile::Color::Yellow);
+      updateFeedsRange.Begin();
+#endif
+
   // Update input_ids with next tokens.
   int batch_beam_size = static_cast<int>(beam_next_tokens.length());
   int64_t dims[] = {batch_beam_size, 1};
@@ -698,6 +782,12 @@ Status UpdateGptFeeds(
 
   // Make sure data is ready before next subgraph execution.
   CUDA_RETURN_IF_ERROR(cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream)));
+
+#ifdef ENABLE_NVTX_PROFILE
+      // cudaDeviceSynchronize();
+      updateFeedsRange.End();
+#endif
+
   return Status::OK();
 }
 

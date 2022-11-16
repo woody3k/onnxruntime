@@ -45,6 +45,7 @@ struct AttentionData {
   T* workspace;
   T* output;
   T* present;
+  int max_seq_length = 0;
 };
 
 template <typename T>
@@ -54,7 +55,8 @@ Status QkvToContext(
     cudaStream_t stream,
     contrib::AttentionParameters& parameters,
     AttentionData<T>& data,
-    void* fused_runner);
+    void* fused_runner,
+    int kv_cache_past_present = 0);
 
 Status LaunchDecoderAttentionKernel(
     const cudaDeviceProp& prop,       // Device Properties
@@ -150,6 +152,22 @@ void LaunchTrtSequenceOffset(int* trt_mha_padding_offset,
                              const int* mask_index,
                              const int batch_size,
                              cudaStream_t stream);
+
+// k, v is of shape (B,S,NxH), in merged tensor of (B,S,3,NxH)
+// bias is of shape (1, NxH)
+// append to present of (2, B, N, T...M, H), T..M means T of M contains data
+template <typename T>
+Status LaunchAddBiasTransAppendKvToPresent(cudaStream_t stream,
+                                           const int max_sequence_length,
+                                           const int total_sequence_length,
+                                           const int sequence_length,
+                                           const int batch_size,
+                                           const int head_size,
+                                           const int num_heads,
+                                           const int max_threads_per_block,
+                                           const T* bias,
+                                           const T* qkv_buffer,
+                                           T* present);
 
 }  // namespace cuda
 }  // namespace contrib

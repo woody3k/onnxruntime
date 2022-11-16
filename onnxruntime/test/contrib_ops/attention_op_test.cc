@@ -17,6 +17,27 @@ enum MaskIndexType {
   kMask4D                 // Megatron causal mask with shape [batch_size, 1, max_sequence_length, max_sequence_length]
 };
 
+template <typename T>
+std::vector<T> ReorderToKvCache(
+    const T* past_data,
+    int batch_size,
+    int effective_sequence_length,
+    int max_sequence_length,
+    int number_of_heads,
+    int head_size) {
+  std::vector<T> arr(2LL * batch_size * number_of_heads * max_sequence_length * head_size);
+  const T* src = past_data;
+  T* dst = arr.data();
+  const int64_t para_size = static_cast<int64_t>(effective_sequence_length) * head_size;
+  const int64_t large_para = static_cast<int64_t>(max_sequence_length) * head_size;
+  for (int64_t ob = 0, obe = 2LL * batch_size * number_of_heads; ob < obe; ob++) {
+    std::copy_n(src, para_size, dst);
+    src += para_size;
+    dst += large_para;
+  }
+  return arr;
+}
+
 static void RunAttentionTest(
     const std::vector<float>& input_data,         // input:      [batch_size, sequence_length, hidden_size]
     const std::vector<float>& weights_data,       // weights:    [hidden_size, 3 * hidden_size]
@@ -44,9 +65,11 @@ static void RunAttentionTest(
     const std::vector<float>& extra_add_data = {},
     int kv_sequence_length = 0,
     const std::vector<float>* key_data = nullptr,
-    const std::vector<float>* value_data = nullptr) {
+    const std::vector<float>* value_data = nullptr,
+    bool use_kv_cache_past_present = false) {
   input_hidden_size = (input_hidden_size == 0 ? hidden_size : input_hidden_size);  // By default, no pruning.
   kv_sequence_length = (kv_sequence_length == 0 ? sequence_length : kv_sequence_length);
+  use_kv_cache_past_present = use_kv_cache_past_present && use_past_state;
 
   int min_cuda_architecture = use_float16 ? 530 : 0;
   bool enable_cuda = HasCudaEnvironment(min_cuda_architecture) && !is_weights_constant && !disable_cuda;
@@ -58,6 +81,7 @@ static void RunAttentionTest(
     OpTester tester("Attention", 1, onnxruntime::kMSDomain);
     tester.AddAttribute<int64_t>("num_heads", static_cast<int64_t>(number_of_heads));
     tester.AddAttribute<int64_t>("unidirectional", static_cast<int64_t>(is_unidirectional ? 1 : 0));
+    tester.AddAttribute<int64_t>("kv_cache_past_present", static_cast<int64_t>(use_kv_cache_past_present ? 1 : 0));
 
     int32_t qkv_hidden_size_sum;
     int32_t v_hidden_size;
@@ -134,19 +158,39 @@ static void RunAttentionTest(
       tester.AddOptionalInputEdge<int32_t>();
     }
 
-    std::vector<int64_t> past_dims = {2, batch_size, number_of_heads, past_sequence_length, head_size};
-    std::vector<int64_t> present_dims = {2, batch_size, number_of_heads, total_sequence_length, head_size};
     if (use_past_state) {
-      if (use_float16) {
-        if (past_sequence_length > 0) {
-          tester.AddInput<MLFloat16>("past", past_dims, ToFloat16(*past_data));
+      if (!use_kv_cache_past_present) {
+        std::vector<int64_t> past_dims = {2, batch_size, number_of_heads, past_sequence_length, head_size};
+        std::vector<int64_t> present_dims = {2, batch_size, number_of_heads, total_sequence_length, head_size};
+        if (use_float16) {
+          if (past_sequence_length > 0) {
+            tester.AddInput<MLFloat16>("past", past_dims, ToFloat16(*past_data));
+          }
+          tester.AddOutput<MLFloat16>("present", present_dims, ToFloat16(*present_data));
+        } else {
+          if (past_sequence_length > 0) {
+            tester.AddInput<float>("past", past_dims, *past_data);
+          }
+          tester.AddOutput<float>("present", present_dims, *present_data);
         }
-        tester.AddOutput<MLFloat16>("present", present_dims, ToFloat16(*present_data));
-      } else {
-        if (past_sequence_length > 0) {
-          tester.AddInput<float>("past", past_dims, *past_data);
+      } else { // kv_cache_past_present
+        std::vector<int64_t> cache_dims = {2, batch_size, number_of_heads, max_sequence_length, head_size};
+        if (use_float16) {
+          auto past_cache = ReorderToKvCache(ToFloat16(*past_data).data(), batch_size, past_sequence_length,
+                                             max_sequence_length, number_of_heads, head_size);
+          auto present_cache = ReorderToKvCache(ToFloat16(*present_data).data(), batch_size, total_sequence_length,
+                                                max_sequence_length, number_of_heads, head_size);
+
+          tester.AddInput<MLFloat16>("past", cache_dims, past_cache);
+          tester.AddOutput<MLFloat16>("present", cache_dims, present_cache);
+        } else {
+          auto past_cache = ReorderToKvCache(past_data->data(), batch_size, past_sequence_length,
+                                             max_sequence_length, number_of_heads, head_size);
+          auto present_cache = ReorderToKvCache(present_data->data(), batch_size, total_sequence_length,
+                                                max_sequence_length, number_of_heads, head_size);
+          tester.AddInput<float>("past", cache_dims, past_cache);
+          tester.AddOutput<float>("present", cache_dims, present_cache);
         }
-        tester.AddOutput<float>("present", present_dims, *present_data);
       }
     } else {
       if (use_float16) {
@@ -197,6 +241,13 @@ static void RunAttentionTest(
       }
     }
 
+    if (use_kv_cache_past_present) {
+        std::vector<int32_t> arr_past_sequence_len(1, past_sequence_length);
+        tester.AddInput<int32_t>("past_sequence_length", {1}, arr_past_sequence_len);
+    } else {
+        tester.AddOptionalInputEdge<int32_t>();
+    }
+
     if (enable_cuda) {
       std::vector<std::unique_ptr<IExecutionProvider>> execution_providers;
       execution_providers.push_back(DefaultCudaExecutionProvider());
@@ -243,19 +294,20 @@ static void RunAttentionTest(
     const std::vector<float>& extra_add_data = {},
     int kv_sequence_length = 0,
     const std::vector<float>* key_data = nullptr,
-    const std::vector<float>* value_data = nullptr) {
+    const std::vector<float>* value_data = nullptr,
+    bool use_kv_cache_past_present = false) {
   RunAttentionTest(input_data, weights_data, false, bias_data, mask_index_data, output_data,
                    batch_size, sequence_length, hidden_size, number_of_heads,
                    use_float16, is_unidirectional, use_past_state, past_sequence_length,
                    past_data, present_data, mask_index_type, input_hidden_size, max_sequence_length,
                    disable_cpu, disable_cuda, disable_rocm, qkv_sizes, extra_add_data,
-                   kv_sequence_length, key_data, value_data);
+                   kv_sequence_length, key_data, value_data, use_kv_cache_past_present);
   RunAttentionTest(input_data, weights_data, true, bias_data, mask_index_data, output_data,
                    batch_size, sequence_length, hidden_size, number_of_heads,
                    use_float16, is_unidirectional, use_past_state, past_sequence_length,
                    past_data, present_data, mask_index_type, input_hidden_size, max_sequence_length,
                    disable_cpu, disable_cuda, disable_rocm, qkv_sizes, extra_add_data,
-                   kv_sequence_length, key_data, value_data);
+                   kv_sequence_length, key_data, value_data, use_kv_cache_past_present);
 }
 
 TEST(AttentionTest, AttentionBatch1) {
@@ -786,6 +838,12 @@ TEST(AttentionTest, AttentionEmptyPastState) {
   RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
                    batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
                    use_past_state, past_sequence_length, &past_data, &present_data);
+
+  RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
+                   batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
+                   use_past_state, past_sequence_length, &past_data, &present_data,
+                   kMaskIndexEnd, 0, sequence_length, true, false, true, {}, {}, 0, nullptr, nullptr,
+                   true);
 }
 
 TEST(AttentionTest, AttentionPastStateBatch1) {
@@ -885,6 +943,13 @@ TEST(AttentionTest, AttentionPastStateBatch1) {
   RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
                    batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
                    use_past_state, past_sequence_length, &past_data, &present_data);
+
+  RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
+                   batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
+                   use_past_state, past_sequence_length, &past_data, &present_data,
+                   kMaskIndexEnd, 0, past_sequence_length + sequence_length + 4,
+                   true, false, true, {}, {}, 0, nullptr, nullptr,
+                   true);
 }
 
 TEST(AttentionTest, AttentionPastStateBatch2) {
@@ -988,6 +1053,13 @@ TEST(AttentionTest, AttentionPastStateBatch2) {
   RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
                    batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
                    use_past_state, past_sequence_length, &past_data, &present_data);
+
+  RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
+                   batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
+                   use_past_state, past_sequence_length, &past_data, &present_data,
+                   kMaskIndexEnd, 0, past_sequence_length + sequence_length + 4,
+                   true, false, true, {}, {}, 0, nullptr, nullptr,
+                   true);
 }
 
 TEST(AttentionTest, AttentionPastStateBatch2WithPadding) {
@@ -1090,6 +1162,13 @@ TEST(AttentionTest, AttentionPastStateBatch2WithPadding) {
   RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
                    batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
                    use_past_state, past_sequence_length, &past_data, &present_data, kMaskIndexEndAndStart);
+
+  RunAttentionTest(input_data, weight_data, bias_data, mask_index_data, output_data,
+                   batch_size, sequence_length, hidden_size, number_of_heads, false, is_unidirectional,
+                   use_past_state, past_sequence_length, &past_data, &present_data, kMaskIndexEndAndStart,
+                   0, past_sequence_length + sequence_length + 4,
+                   true, false, true, {}, {}, 0, nullptr, nullptr,
+                   true);
 }
 
 TEST(AttentionTest, AttentionBatch2MaskIndex2) {
