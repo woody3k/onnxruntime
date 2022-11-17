@@ -174,7 +174,6 @@ Status Attention<T>::ComputeInternal(OpKernelContext* context) const {
   data.workspace = reinterpret_cast<CudaT*>(work_space.get());
   data.output = reinterpret_cast<CudaT*>(output->MutableData<T>());
   data.present = (nullptr == present) ? nullptr : reinterpret_cast<CudaT*>(present->MutableData<T>());
-  if (kv_cache_past_present_) data.max_seq_length = past->Shape()[3];
 
   return QkvToContext<CudaT>(
     device_prop, cublas, Stream(), parameters, data, reinterpret_cast<void*>(fused_runner), kv_cache_past_present_);

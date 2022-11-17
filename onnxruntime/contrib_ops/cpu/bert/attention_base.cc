@@ -231,8 +231,8 @@ Status AttentionBase::CheckInputs(const TensorShape& input_shape,
       if (past_seq_len == nullptr || !onnxruntime::IsScalarOr1ElementVector(past_seq_len)) {
         return ORT_MAKE_STATUS(ONNXRUNTIME, INVALID_ARGUMENT,
                                "past_sequence_length tensor must be of one element when kv_cache_past_present is set");
-        past_sequence_length = *past_seq_len->Data<int32_t>();
       }
+      past_sequence_length = *past_seq_len->Data<int32_t>();
     }
   }
 

@@ -45,7 +45,6 @@ struct AttentionData {
   T* workspace;
   T* output;
   T* present;
-  int max_seq_length = 0;
 };
 
 template <typename T>

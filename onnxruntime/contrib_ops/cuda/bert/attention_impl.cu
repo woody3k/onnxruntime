@@ -86,6 +86,43 @@ size_t GetAttentionWorkspaceSize(
                                                 total_sequence_length);
 }
 
+// template <typename T>
+// void print_dev_arr(const char* desc, const T* darr, int n, int width) {
+//   cudaDeviceSynchronize();
+//   std::vector<T> harr(n);
+//   cudaMemcpy(harr.data(), darr, n * sizeof(T), cudaMemcpyDeviceToHost);
+//   std::cout << "++++++" << desc << "========>>>>" << std::endl;
+//   for (int i = 0; i < n; i += width) {
+//     for (int j = 0, m = std::min(n - i, width); j < m; j++) {
+//       std::cout << harr[i + j] << ", ";
+//     }
+//     std::cout << std::endl;
+//   }
+// }
+
+// template <typename T>
+// void print_dev_matrix(const char* desc, const T* darr, int sz,
+//                       int batch, int rows, int cols,
+//                       int batch_stride, int row_stride, int col_stride = 1) {
+//   cudaDeviceSynchronize();
+//   std::vector<T> harr(sz);
+//   cudaMemcpy(harr.data(), darr, harr.size() * sizeof(T), cudaMemcpyDeviceToHost);
+//   std::cout << "++++++" << desc << "========>>>>" << std::endl;
+//   const T* p = harr.data();
+//   for (int b = 0; b < batch; b++) {
+//     const T* pb = p + (b * batch_stride);
+//     for (int r = 0; r < rows; r++) {
+//       const T* pr = pb + (r * row_stride);
+//       for (int c = 0; c < cols; c++) {
+//         const T* pc = pr + (c * col_stride);
+//         std::cout << *pc << ", ";
+//       }
+//       std::cout << std::endl;
+//     }
+//     std::cout << "--" << std::endl;
+//   }
+// }
+
 template <typename T>
 Status QkvToContext(
     const cudaDeviceProp& prop,
@@ -123,20 +160,21 @@ Status QkvToContext(
   bool use_fused_kernel = (nullptr != fused_runner && data.bias != nullptr);
 
   if (nullptr != data.gemm_buffer) {
-    int num_qkv = (kv_cache_past_present ? 1 : 3);
     if (data.bias == nullptr) {
       // gemm_buffer should be BxSx3xNxH => qkv: 3xBxNxSxH
       ORT_ENFORCE(qk_head_size == v_head_size);
-      ORT_RETURN_IF_ERROR(LaunchTransQkv(stream, num_qkv, sequence_length, batch_size, qk_head_size, num_heads,
+      ORT_ENFORCE(kv_cache_past_present == 0);
+      ORT_RETURN_IF_ERROR(LaunchTransQkv(stream, 3, sequence_length, batch_size, qk_head_size, num_heads,
                                          max_threads_per_block, false, data.gemm_buffer, qkv));
     } else {
+      int qkv_mask = (kv_cache_past_present ? 1 : 7);
       const int format = (use_fused_kernel ? 2 : 1);
       // format 1: BxSx(NH + NH + NH_v) => BxNxSxH + BxNxSxH + BxNxSxH_v
       // format 2: BxSx(NH + NH + NH) => BxSxNx(H + H + H)
-      LaunchAddBiasTranspose(stream, num_qkv, format, max_threads_per_block,
+      LaunchAddBiasTranspose(stream, 3, format, max_threads_per_block,
                              batch_size, sequence_length, num_heads, qk_head_size,
                              data.gemm_buffer, data.bias, qkv,
-                             true, v_head_size);
+                             true, v_head_size, qkv_mask);
       CUDA_RETURN_IF_ERROR(cudaGetLastError());
     }
   } else {  // gemm_buffer == nullptr
@@ -222,16 +260,18 @@ Status QkvToContext(
     ORT_ENFORCE(qk_head_size == v_head_size);
     if (data.present != data.past) {
       // For easy testing. Production should better avoid this path.
-      int64_t kv_size = 2LL * (int64_t)batch_size * num_heads * data.max_seq_length * qk_head_size;
-      cudaMemcpyAsync(data.present, data.past, kv_size, cudaMemcpyDeviceToDevice, stream);
+      int64_t kv_size = 2LL * (int64_t)batch_size * num_heads * parameters.max_sequence_length * qk_head_size;
+      cudaMemcpyAsync(data.present, data.past, kv_size * sizeof(T), cudaMemcpyDeviceToDevice, stream);
     }
     // append last k v to present
     ORT_RETURN_IF_ERROR(LaunchAddBiasTransAppendKvToPresent(
-        stream, data.max_seq_length, total_sequence_length, sequence_length,
+        stream, parameters.max_sequence_length, parameters.past_sequence_length, sequence_length,
         batch_size, qk_head_size, num_heads, max_threads_per_block,
         data.bias, data.gemm_buffer, data.present));
 
-    present_size_per_batch_k = present_size_per_batch_v = data.max_seq_length * qk_head_size;
+    present_size_per_batch_k = present_size_per_batch_v = parameters.max_sequence_length * qk_head_size;
+    k = data.present;
+    v = data.present + batches * present_size_per_batch_k;
   }
 
   const int* mask_index = data.mask_index;
@@ -250,12 +290,26 @@ Status QkvToContext(
   // For raw attention mask, the scalar 1/sqrt(H) is moved to combine with softmax computation.
   float alpha = use_raw_attention_mask ? one : rsqrt_head_size;
 
+  // if constexpr (std::is_same<T, float>::value) {
+  //   int szq = batches * sequence_length * qk_head_size;
+  //   print_dev_matrix(" Q (B, N, S, H)", q, szq, batches, sequence_length, qk_head_size, sequence_length * qk_head_size, qk_head_size, 1);
+  //   int szk = batches * present_size_per_batch_k;
+  //   print_dev_matrix(" K (B, N, T / Ms, H)", k, szk, batches, total_sequence_length, qk_head_size, present_size_per_batch_k, qk_head_size, 1);
+  //   int szqk = batches * sequence_length * total_sequence_length;
+  //   print_dev_matrix(" Q*K' (B, N, S, T) before gemm ", scratch1, szqk, batches, sequence_length, total_sequence_length, sequence_length * total_sequence_length, sequence_length, 1);
+  // }
+
   CUBLAS_RETURN_IF_ERROR(cublasGemmStridedBatchedHelper(
       cublas, CUBLAS_OP_T, CUBLAS_OP_N,
       total_sequence_length, sequence_length, qk_head_size,
       &alpha, k, qk_head_size, present_size_per_batch_k,
       q, qk_head_size, sequence_length * qk_head_size,
       &zero, scratch1, total_sequence_length, temp_matrix_size, batches, prop));
+
+  // if constexpr (std::is_same<T, float>::value) {
+  //   int szqk = batches * sequence_length * total_sequence_length;
+  //   print_dev_matrix(" Q*K' (B, N, S, T) ", scratch1, szqk, batches, sequence_length, total_sequence_length, sequence_length * total_sequence_length, sequence_length, 1);
+  // }
 
   // Apply softmax and store result R to scratch2: BxNxSxT
   if (use_raw_attention_mask) {  // 2d, 3d or 4d attention mask
@@ -285,6 +339,11 @@ Status QkvToContext(
                           scratch1, scratch2, parameters.is_unidirectional));
   }
 
+  // if constexpr (std::is_same<T, float>::value) {
+  //   int sz = batches * sequence_length * total_sequence_length;
+  //   print_dev_arr("R = Softmax(Q*K')", scratch2, sz, total_sequence_length);
+  // }
+
   // compute R*V (as V*R), and store in temp_output (space used by Q): BxNxSxH_v
   temp_output = qkv;
   CUBLAS_RETURN_IF_ERROR(cublasGemmStridedBatchedHelper(
@@ -293,6 +352,11 @@ Status QkvToContext(
       &one, v, v_head_size, present_size_per_batch_v,
       scratch2, total_sequence_length, temp_matrix_size,
       &zero, temp_output, v_head_size, size_per_batch_v, batches, prop));
+
+  // if constexpr (std::is_same<T, float>::value) {
+  //   int sz = batches * sequence_length * v_head_size;
+  //   print_dev_arr("R * V", temp_output, sz, v_head_size);
+  // }
 
   // Temp_output is BxNxSxH_v, transpose to output BxSxNxH_v
   return LaunchTransCtx(stream, sequence_length, batch_size, v_head_size, num_heads,
@@ -562,31 +626,32 @@ template Status QkvToContext<half>(
 template <typename T>
 __global__ void AddBiasTransAppendKvToPresent(
     const T* qkv, const T* biases, T* present,
-    int head_size, int sequence_length, int max_sequence_length) {
+    const int head_size, const int past_sequence_length, const int max_sequence_length) {
   // Input:  BxSxMxNxH  (Format 1)
-  // Output: (2, B, N, [P..P+S) of M, H),
+  // Output: (2, B, N, [P..P+S) of MaxS, H),
   // B is batch_size, S is sequence_length, M is number of matrices, N is num_heads, H is head_size
-  int n = threadIdx.y;
-  int s = blockIdx.x;
-  int b = blockIdx.y;
-  int m = blockIdx.z + 1;  // k = 1, v = 2
-  constexpr int M = 3;
-  const int num_heads = blockDim.y;
-  const int past_sequence_length = gridDim.x;
-  const int batch_size = gridDim.y;
+  const int n = threadIdx.y;
+  const int s = blockIdx.x;
+  const int b = blockIdx.y;
+  const int N = blockDim.y;
+  const int S = gridDim.x;
+  const int B = gridDim.y;
 
-  const int H = head_size;
-  const int NH = num_heads * head_size;
-  const int NHS = NH * sequence_length;
+  constexpr int M = 3; // Matrix count in qkv
+  const int m = blockIdx.z + 1;  // k = 1, v = 2
 
-  qkv += (n * head_size + (s * M + m) * NH + b * NHS * M);
+  const int NH = N * head_size;
+  const int NHS = NH * S;
+
+  qkv += (n * head_size + (s * M + m) * NH + b * M * NHS);
   if (biases) {
-    biases += (m * NH + n * H);
+    biases += (m * NH + n * head_size);
   }
 
-  int64_t out_offset = (int64_t)(m - 1) * batch_size * NH * max_sequence_length;
-  out_offset += ((int64_t)(past_sequence_length + s) * H + n * max_sequence_length * H + b * NH * max_sequence_length);
-  present += out_offset;
+  const int MsH = max_sequence_length * head_size;
+  const int NMsH = N * MsH;
+  const int BNMsH = B * NMsH;
+  present += ((past_sequence_length + s) * head_size + n * MsH + b * NMsH + (m-1) * BNMsH);
 
   for (int h = threadIdx.x; h < head_size; h += blockDim.x) {
     T bias = (biases ? biases[h] : (T)0.0f);
