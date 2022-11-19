@@ -365,7 +365,7 @@ if (onnxruntime_BUILD_WEBASSEMBLY)
     set(CMAKE_CXX_FLAGS_DEBUG "-g3")
   else()
     # do not generate any debug info. This helps to accelerate building process and reduce binary size.
-    set(CMAKE_CXX_FLAGS_DEBUG "-g0")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g2")
   endif()
 
   if (onnxruntime_ENABLE_WEBASSEMBLY_SIMD)
