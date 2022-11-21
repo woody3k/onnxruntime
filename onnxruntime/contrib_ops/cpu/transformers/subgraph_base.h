@@ -48,7 +48,7 @@ class Subgraph {
   Status Setup(const SessionState& session_state,
                const SessionState& subgraph_session_state);
 
-  FeedsFetchesManager* GetFeedsFetchesManager() { 
+  FeedsFetchesManager* GetFeedsFetchesManager() {
     return (feeds_fetches_manager_.has_value()) ? &*feeds_fetches_manager_ : nullptr;
   }
 
@@ -69,6 +69,7 @@ class Subgraph {
   const SessionState* subgraph_session_state_;
   std::optional<FeedsFetchesManager> feeds_fetches_manager_;
   bool is_output_float16_;
+  bool is_kv_cache_past_present_;
 };
 
 }  // namespace transformers
