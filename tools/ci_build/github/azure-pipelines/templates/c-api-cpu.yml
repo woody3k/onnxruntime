@@ -70,7 +70,7 @@ jobs:
     PoolName: 'aiinfra-linux-ARM64-CPU-2019'
 
 - job: MacOS_C_API_Packaging_CPU_x64
-  condition: ${{ parameters.MakeMacPackage }}
+  condition: eq('${{ parameters.MakeMacPackage }}', 'true'))
   workspace:
     clean: all
   variables:
@@ -145,8 +145,7 @@ jobs:
     publish_executables: '1'
 
 - job: iOS_Full_xcframework
-  condition:
-    ${{ parameters.MakeiOSPackage }}
+  condition: eq('${{ parameters.MakeiOSPackage }}', 'true'))
   workspace:
     clean: all
   pool:
@@ -383,7 +382,7 @@ jobs:
       targetPath: '$(Build.BinariesDirectory)/nuget-artifact'
 
   - task: DownloadPipelineArtifact@0
-    condition: ${{ parameters.MakeMacPackage }}
+    condition: eq('${{ parameters.MakeMacPackage }}', 'true'))
     displayName: 'Download osx-x64 Pipeline Artifact'
     inputs:
       artifactName: 'onnxruntime-osx'
@@ -402,7 +401,7 @@ jobs:
       targetPath: '$(Build.BinariesDirectory)/nuget-artifact'
 
   - task: DownloadPipelineArtifact@2
-    condition: ${{ parameters.MakeiOSPackage }}
+    condition: eq('${{ parameters.MakeiOSPackage }}', 'true'))
     displayName: 'Download iOS Pipeline Artifact'
     inputs:
       artifactName: 'onnxruntime-ios-full-xcframework'
