@@ -153,17 +153,15 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
   ORT_RETURN_IF_ERROR(CreateInitialFeeds(greedy_state.sequence_lengths, expanded_input_ids_in_cpu, feeds, buffer));
 
   if (gpt_subgraph_.is_kv_cache_past_present_) { // Reuse past and present
-    fetches.resize(gpt_subgraph_.GetFirstPresentOutputIndex() + gpt_subgraph_.num_layers);
-    for (int idx = 0; idx < gpt_subgraph_.GetFirstPresentOutputIndex(); idx++) {
-      fetches.push_back(OrtValue()); // do not bind the subgraph output before present
-    }
+    fetches.reserve(gpt_subgraph_.GetFirstPresentOutputIndex() + gpt_subgraph_.num_layers);
+    fetches.resize(gpt_subgraph_.GetFirstPresentOutputIndex(), OrtValue());
     for (int layer = 0; layer < gpt_subgraph_.num_layers; layer++) {
       int feed_idx = gpt_subgraph_.GetFirstPastInputIndex() + layer;
-      const OrtValue& past_tensor_value = feeds[feed_idx];
-      const Tensor& past_tensor = past_tensor_value.Get<Tensor>();
+      OrtValue& past_tensor_value = feeds[feed_idx];
+      Tensor* past_tensor = past_tensor_value.GetMutable<Tensor>();
       OrtValue present_tensor_value;
-      Tensor::InitOrtValue(past_tensor.DataType(), past_tensor.Shape(), const_cast<T*>(past_tensor.Data<T>()),
-                           past_tensor.Location(), present_tensor_value);
+      Tensor::InitOrtValue(past_tensor->DataType(), past_tensor->Shape(), past_tensor->MutableData<T>(),
+                           past_tensor->Location(), present_tensor_value);
       fetches.push_back(present_tensor_value);
     }
   }
@@ -246,7 +244,8 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
 
       ORT_RETURN_IF_ERROR(UpdateFeeds(fetches, feeds, current_length,
                                       position_ids, increase_position,
-                                      next_tokens.as_span<const int32_t>(), current_length));
+                                      next_tokens.as_span<const int32_t>(),
+                                      current_length - 1));
     }
     if (gpt_subgraph_.is_kv_cache_past_present_) {
       // clear fetched values before presents[]

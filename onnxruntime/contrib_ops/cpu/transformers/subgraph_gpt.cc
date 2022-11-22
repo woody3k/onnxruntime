@@ -91,10 +91,10 @@ Status GptSubgraph::CreateInitialFeeds(
     }
     int64_t past_seq_len_dims[] = {1};
     TensorShape past_seq_len_shape(&past_seq_len_dims[0], 1);
-    OrtValue past_seq_len_tensor;
-    Tensor::InitOrtValue(DataTypeImpl::GetType<int32_t>(), past_seq_len_shape, cpu_allocator, past_seq_len_tensor);
-    *past_seq_len_tensor.GetMutable<int32_t>() = 0;
-    feeds.push_back(past_seq_len_tensor);
+    OrtValue past_seq_len_tensor_value;
+    Tensor::InitOrtValue(DataTypeImpl::GetType<int32_t>(), past_seq_len_shape, cpu_allocator, past_seq_len_tensor_value);
+    feeds.push_back(past_seq_len_tensor_value);
+    *past_seq_len_tensor_value.GetMutable<Tensor>()->MutableData<int32_t>() = 0;
   }
 
   // Pass in implicit inputs
@@ -110,8 +110,8 @@ Status GptSubgraph::Validate(const std::vector<const NodeArg*>& subgraph_inputs,
   ORT_RETURN_IF(num_subgraph_outputs <= first_present_output_index_,
                 "Invalid GPT-2 subgraph: number of outputs shall be larger than 1 (Need past state in outputs).");
 
-  ORT_RETURN_IF(num_subgraph_inputs != num_subgraph_outputs + 2,
-                "Invalid GPT-2 subgraph: number of inputs shall be number of outputs plus 2");
+  ORT_RETURN_IF(!((num_subgraph_inputs == num_subgraph_outputs + 2) || (num_subgraph_inputs == num_subgraph_outputs + 3)),
+                "Invalid GPT-2 subgraph: number of inputs shall be number of outputs plus 2 or 3 (if kv_cache)");
 
   ORT_RETURN_IF(subgraph_inputs[0]->Name() != "input_ids",
                 "subgraph input 0 shall be named as input_ids, got: ", subgraph_inputs[0]->Name());

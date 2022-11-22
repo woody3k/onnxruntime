@@ -727,7 +727,9 @@ Status UpdateGptFeeds(
     gsl::span<const int32_t> beam_indices,
     int num_beams,
     int gpt_subgraph_first_past_input_idx,
-    int gpt_subgraph_first_present_output_idx) {
+    int gpt_subgraph_first_present_output_idx,
+    bool is_kv_cache_past_present,
+    int past_sequence_len) {
 
 #ifdef ENABLE_NVTX_PROFILE
       // cudaDeviceSynchronize();
@@ -767,17 +769,22 @@ Status UpdateGptFeeds(
 
   next_inputs[2] = attention_mask;
 
-  // Update past state
-  if (num_beams == 1) {
-    const int k = gpt_subgraph_first_past_input_idx - gpt_subgraph_first_present_output_idx;
-    // feed present_* output to past_* inputs one by one
-    for (size_t i = gpt_subgraph_first_present_output_idx; i < last_outputs.size(); ++i) {
-      next_inputs[i + k] = last_outputs[i];
-    }
+  if (is_kv_cache_past_present) {
+    const int k = (static_cast<int>(last_outputs.size()) - gpt_subgraph_first_present_output_idx) + gpt_subgraph_first_past_input_idx;
+    *(next_inputs[k].GetMutable<Tensor>()->MutableData<int32_t>()) = past_sequence_len;
   } else {
-    ORT_RETURN_IF_ERROR(PickGptPastState<T>(last_outputs, next_inputs, beam_indices, allocator,
-                                            gpt_subgraph_first_past_input_idx,
-                                            gpt_subgraph_first_present_output_idx, stream));
+    // Update past state
+    if (num_beams == 1) {
+      const int k = gpt_subgraph_first_past_input_idx - gpt_subgraph_first_present_output_idx;
+      // feed present_* output to past_* inputs one by one
+      for (size_t i = gpt_subgraph_first_present_output_idx; i < last_outputs.size(); ++i) {
+        next_inputs[i + k] = last_outputs[i];
+      }
+    } else {
+      ORT_RETURN_IF_ERROR(PickGptPastState<T>(last_outputs, next_inputs, beam_indices, allocator,
+                                              gpt_subgraph_first_past_input_idx,
+                                              gpt_subgraph_first_present_output_idx, stream));
+    }
   }
 
   // Make sure data is ready before next subgraph execution.
@@ -965,7 +972,9 @@ template Status UpdateGptFeeds<float>(
     gsl::span<const int32_t> beam_indices,
     int num_beams,
     int gpt_subgraph_first_past_input_idx,
-    int gpt_subgraph_first_present_output_idx);
+    int gpt_subgraph_first_present_output_idx,
+    bool is_kv_cache_past_present,
+    int past_sequence_len);
 
 // Float16
 template void InitBeamState<MLFloat16>(
@@ -1018,7 +1027,9 @@ template Status UpdateGptFeeds<MLFloat16>(
     gsl::span<const int32_t> beam_indices,
     int num_beams,
     int gpt_subgraph_first_past_input_idx,
-    int gpt_subgraph_first_present_output_idx);
+    int gpt_subgraph_first_present_output_idx,
+    bool is_kv_cache_past_present,
+    int past_sequence_len);
 
 template Status UpdateDecoderFeeds<float>(
     AllocatorPtr allocator,
