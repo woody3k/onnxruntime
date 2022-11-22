@@ -14,7 +14,7 @@ parameters:
   type: boolean
   default: true
 
-- name: MakeiOSAPackage
+- name: MakeiOSPackage
   displayName: Make iOS Package
   type: boolean
   default: true
