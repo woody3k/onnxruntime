@@ -401,7 +401,7 @@ jobs:
       targetPath: '$(Build.BinariesDirectory)/nuget-artifact'
 
   - task: DownloadPipelineArtifact@2
-    condition: eq('${{ parameters.MakeiOSPackage }}', 'true'))
+    condition: eq('${{ parameters.MakeiOSPackage }}', 'true')
     displayName: 'Download iOS Pipeline Artifact'
     inputs:
       artifactName: 'onnxruntime-ios-full-xcframework'
