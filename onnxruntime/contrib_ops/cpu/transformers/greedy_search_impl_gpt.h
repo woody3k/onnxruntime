@@ -65,7 +65,8 @@ class GreedySearchGpt : public GreedySearchBase<T> {
       int current_length,
       OrtValue& position_ids,
       bool increase_position,
-      gsl::span<const int32_t> next_tokens);
+      gsl::span<const int32_t> next_tokens,
+      int past_sequence_length);
 
   GptSubgraph& gpt_subgraph_;
 
@@ -94,7 +95,8 @@ Status GreedySearchGpt<T>::CreateInitialFeeds(gsl::span<int32_t>& sequence_lengt
                                           feeds,
                                           this->create_inputs_func_,
                                           this->add_to_feeds_func_,
-                                          buffer);
+                                          buffer,
+                                          this->parameters_->max_length);
 }
 
 template <typename T>
@@ -104,7 +106,8 @@ Status GreedySearchGpt<T>::UpdateFeeds(
     int current_length,
     OrtValue& position_ids,
     bool increase_position,
-    gsl::span<const int32_t> next_tokens) {
+    gsl::span<const int32_t> next_tokens,
+    int past_sequence_length) {
   gsl::span<const int32_t> place_holder;
   return update_feeds_func_(this->temp_space_allocator_,
                             this->cuda_stream_,
@@ -117,7 +120,10 @@ Status GreedySearchGpt<T>::UpdateFeeds(
                             place_holder,
                             this->parameters_->num_beams,
                             gpt_subgraph_.GetFirstPastInputIndex(),
-                            gpt_subgraph_.GetFirstPresentOutputIndex());
+                            gpt_subgraph_.GetFirstPresentOutputIndex(),
+                            gpt_subgraph_.is_kv_cache_past_present_,
+                            past_sequence_length
+                            );
 }
 
 template <typename T>
@@ -146,20 +152,22 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
   OrtValue expanded_input_ids_in_cpu;
   ORT_RETURN_IF_ERROR(CreateInitialFeeds(greedy_state.sequence_lengths, expanded_input_ids_in_cpu, feeds, buffer));
 
-  // int layers = 12; // TODO
-  // int num_heads = 12; // TODO
+  if (gpt_subgraph_.is_kv_cache_past_present_) { // Reuse past and present
+    fetches.resize(gpt_subgraph_.GetFirstPresentOutputIndex() + gpt_subgraph_.num_layers);
+    for (int idx = 0; idx < gpt_subgraph_.GetFirstPresentOutputIndex(); idx++) {
+      fetches.push_back(OrtValue()); // do not bind the subgraph output before present
+    }
+    for (int layer = 0; layer < gpt_subgraph_.num_layers; layer++) {
+      int feed_idx = gpt_subgraph_.GetFirstPastInputIndex() + layer;
+      const OrtValue& past_tensor_value = feeds[feed_idx];
+      const Tensor& past_tensor = past_tensor_value.Get<Tensor>();
+      OrtValue present_tensor_value;
+      Tensor::InitOrtValue(past_tensor.DataType(), past_tensor.Shape(), const_cast<T*>(past_tensor.Data<T>()),
+                           past_tensor.Location(), present_tensor_value);
+      fetches.push_back(present_tensor_value);
+    }
+  }
 
-  // // TODO, move it the CreateInitialFeeds
-  // auto past_type = std::is_same<T, float>().value ? DataTypeImpl::GetType<float>() : DataTypeImpl::GetType<MLFloat16>();
-  // int64_t past_state_dims[] = {2, parameters->batch_size, num_heads, parameters->max_length, parameters->head_size};
-  // TensorShape past_shape(&past_state_dims[0], 5);
-  // std::vector<OrtValue> past_present_tensors_(layers);
-  // fetches.
-  // for (int i = 0; i < layers; i++) {
-  //   Tensor::InitOrtValue(past_type, past_shape, this->temp_space_allocator_, past_present_tensors_[i]);
-  //   feeds[3+i] = past_present_tensors_[i];
-  // }
-  // CreateTensorWithDataAsOrtValue
   init_greedy_state_func_(&greedy_state,
                           greedy_state.sequence_lengths,
                           this->cuda_stream_);
@@ -238,9 +246,16 @@ Status GreedySearchGpt<T>::Execute(const FeedsFetchesManager& feeds_fetches_mana
 
       ORT_RETURN_IF_ERROR(UpdateFeeds(fetches, feeds, current_length,
                                       position_ids, increase_position,
-                                      next_tokens.as_span<const int32_t>()));
+                                      next_tokens.as_span<const int32_t>(), current_length));
     }
-    fetches.clear();
+    if (gpt_subgraph_.is_kv_cache_past_present_) {
+      // clear fetched values before presents[]
+      for (int idx = 0; idx < gpt_subgraph_.GetFirstPresentOutputIndex(); idx++) {
+        fetches[idx] = OrtValue();
+      }
+    } else {
+      fetches.clear();
+    }
   }
 
   // Copy the sequences to output

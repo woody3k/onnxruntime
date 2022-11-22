@@ -26,9 +26,9 @@ Subgraph::Subgraph(
       head_size(0),
       vocab_size(0),
       num_layers(0),
+      is_kv_cache_past_present_(false),
       allocator_(nullptr),
-      is_output_float16_(false),
-      is_kv_cache_past_present_(false) {
+      is_output_float16_(false) {
   num_implicit_inputs = static_cast<int>(node.ImplicitInputDefs().size());
 
   auto& subgraph_inputs = subgraph.GetInputs();
@@ -79,9 +79,9 @@ Status Subgraph::Setup(const SessionState& session_state,
       feed_locations.push_back(location.device);
     } else {
       if (feed_names[i] == "past_sequence_length") {
-        // when past_sequence_length is needed in subgraph, we treat it as kv_cache_past_present_
-        // past_sequence_length is for CPU usage only
+        // when past_sequence_length is needed in subgraph, treat it as kv_cache_past_present_
         is_kv_cache_past_present_ = true;
+        // past_sequence_length is on CPU memory
         feed_locations.push_back(OrtDevice());
       } else {
         feed_locations.push_back(default_location.device);

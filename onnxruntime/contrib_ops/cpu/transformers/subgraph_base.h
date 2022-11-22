@@ -43,6 +43,7 @@ class Subgraph {
   int head_size;
   int vocab_size;
   int num_layers;
+  bool is_kv_cache_past_present_;
 
   // Setup execution
   Status Setup(const SessionState& session_state,
@@ -69,7 +70,6 @@ class Subgraph {
   const SessionState* subgraph_session_state_;
   std::optional<FeedsFetchesManager> feeds_fetches_manager_;
   bool is_output_float16_;
-  bool is_kv_cache_past_present_;
 };
 
 }  // namespace transformers

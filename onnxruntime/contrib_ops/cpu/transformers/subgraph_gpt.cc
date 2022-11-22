@@ -25,7 +25,8 @@ Status GptSubgraph::CreateInitialFeeds(
     std::vector<OrtValue>& feeds,
     const GenerationDeviceHelper::CreateGptInputsFunc& create_gpt_inputs_func,
     const GenerationDeviceHelper::AddToFeedsFunc& add_to_feeds_func,
-    IAllocatorUniquePtr<char>& buffer) {
+    IAllocatorUniquePtr<char>& buffer,
+    int max_seq_len_kv_cache) {
   ORT_ENFORCE(session_state_ != nullptr, "Setup must be called before CreateInitialFeeds");
 
   const IExecutionProvider* provider = GetProvider();
@@ -47,13 +48,6 @@ Status GptSubgraph::CreateInitialFeeds(
   auto default_allocator = provider->GetAllocator(0, OrtMemTypeDefault);
   allocator_ = default_allocator;
 
-  // Initialize empty past state
-  auto past_type = IsOutputFloat16() ? DataTypeImpl::GetType<MLFloat16>() : DataTypeImpl::GetType<float>();
-  int64_t past_state_dims[] = {2, batch_size * num_beams, num_heads, 0, head_size};
-  TensorShape past_shape(&past_state_dims[0], 5);
-  OrtValue empty_past;
-  Tensor::InitOrtValue(past_type, past_shape, default_allocator, empty_past);
-
   // The ordering is the same as used in Setup
   feeds.reserve(static_cast<size_t>(num_subgraph_inputs) + static_cast<size_t>(num_implicit_inputs));
 
@@ -74,9 +68,33 @@ Status GptSubgraph::CreateInitialFeeds(
                                         feeds,
                                         buffer));
 
-  // The remaining inputs are past state.
-  for (int i = first_past_input_index_; i < num_subgraph_inputs; ++i) {
-    feeds.push_back(empty_past);
+  auto past_type = IsOutputFloat16() ? DataTypeImpl::GetType<MLFloat16>() : DataTypeImpl::GetType<float>();
+  if (!is_kv_cache_past_present_) {
+    // Initialize empty past state
+    int64_t past_state_dims[] = {2, batch_size * num_beams, num_heads, 0, head_size};
+    TensorShape past_shape(&past_state_dims[0], 5);
+    OrtValue empty_past;
+    Tensor::InitOrtValue(past_type, past_shape, default_allocator, empty_past);
+
+    // The remaining inputs are past state.
+    for (int i = first_past_input_index_; i < num_subgraph_inputs; ++i) {
+      feeds.push_back(empty_past);
+    }
+  } else {
+    int64_t past_state_dims[] = {2, batch_size * num_beams, num_heads, max_seq_len_kv_cache, head_size};
+    TensorShape past_shape(&past_state_dims[0], 5);
+    // The remaining inputs are past state execpt the last one
+    for (int i = first_past_input_index_; i < num_subgraph_inputs - 1; ++i) {
+      OrtValue past_tensor;
+      Tensor::InitOrtValue(past_type, past_shape, default_allocator, past_tensor);
+      feeds.push_back(past_tensor);
+    }
+    int64_t past_seq_len_dims[] = {1};
+    TensorShape past_seq_len_shape(&past_seq_len_dims[0], 1);
+    OrtValue past_seq_len_tensor;
+    Tensor::InitOrtValue(DataTypeImpl::GetType<int32_t>(), past_seq_len_shape, cpu_allocator, past_seq_len_tensor);
+    *past_seq_len_tensor.GetMutable<int32_t>() = 0;
+    feeds.push_back(past_seq_len_tensor);
   }
 
   // Pass in implicit inputs
