@@ -9,6 +9,16 @@ parameters:
   type: boolean
   default: true
 
+- name: MakeMacPackage
+  displayName: Make Mac Package
+  type: boolean
+  default: true
+
+- name: MakeiOSAPackage
+  displayName: Make iOS Package
+  type: boolean
+  default: true
+
 - name: DoEsrp
   displayName: Run code sign tasks? Must be true if you are doing an Onnx Runtime release.
   type: boolean
@@ -60,6 +70,7 @@ jobs:
     PoolName: 'aiinfra-linux-ARM64-CPU-2019'
 
 - job: MacOS_C_API_Packaging_CPU_x64
+  condition: ${{ parameters.MakeMacPackage}}
   workspace:
     clean: all
   variables:
@@ -134,6 +145,8 @@ jobs:
     publish_executables: '1'
 
 - job: iOS_Full_xcframework
+  condition:
+    ${{ parameters.MakeiOSAPackage }}
   workspace:
     clean: all
   pool:
@@ -245,7 +258,8 @@ jobs:
   dependsOn:
   - Linux_C_API_Packaging_CPU_x64
   - Linux_C_API_Packaging_CPU_aarch64
-  - MacOS_C_API_Packaging_CPU_x64
+  - ${{ parameters.MakeMacPacakge}}:
+    - MacOS_C_API_Packaging_CPU_x64
   - Windows_Packaging_CPU_x86_${{ parameters.BuildVariant }}
   - Windows_Packaging_CPU_x64_${{ parameters.BuildVariant }}
   - Windows_Packaging_CPU_arm_${{ parameters.BuildVariant }}
@@ -331,13 +345,15 @@ jobs:
   dependsOn:
   - Linux_C_API_Packaging_CPU_x64
   - Linux_C_API_Packaging_CPU_aarch64
-  - MacOS_C_API_Packaging_CPU_x64
+  - ${{ parameters.MakeMacPacakge }}:
+    - MacOS_C_API_Packaging_CPU_x64
   - Windows_Packaging_CPU_x86_${{ parameters.BuildVariant }}
   - Windows_Packaging_CPU_x64_${{ parameters.BuildVariant }}
   - Windows_Packaging_CPU_arm_${{ parameters.BuildVariant }}
   - Windows_Packaging_CPU_arm64_${{ parameters.BuildVariant }}
   - Android_Java_API_AAR_Packaging_Full
-  - iOS_Full_xcframework
+  - ${{ parameters.MakeiOSPackage }}:
+    - iOS_Full_xcframework
   condition: succeeded()
   steps:
   - checkout: self
@@ -367,6 +383,7 @@ jobs:
       targetPath: '$(Build.BinariesDirectory)/nuget-artifact'
 
   - task: DownloadPipelineArtifact@0
+    condition: ${{ parameters.MakeMacPackage }}
     displayName: 'Download osx-x64 Pipeline Artifact'
     inputs:
       artifactName: 'onnxruntime-osx'
@@ -385,6 +402,7 @@ jobs:
       targetPath: '$(Build.BinariesDirectory)/nuget-artifact'
 
   - task: DownloadPipelineArtifact@2
+    condition: ${{ parameters.MakeiOSPackage }}
     displayName: 'Download iOS Pipeline Artifact'
     inputs:
       artifactName: 'onnxruntime-ios-full-xcframework'
@@ -568,7 +586,8 @@ jobs:
   dependsOn:
   - Linux_C_API_Packaging_CPU_x64
   - Linux_C_API_Packaging_CPU_aarch64
-  - MacOS_C_API_Packaging_CPU_x64
+  - ${{ parameters.MakeMacPacakge}}:
+    - MacOS_C_API_Packaging_CPU_x64
   - Windows_Packaging_CPU_x64_${{ parameters.BuildVariant }}
   - Windows_Packaging_CPU_arm64_${{ parameters.BuildVariant }}
   condition: succeeded()
