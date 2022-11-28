@@ -80,11 +80,7 @@ def profile_fast_gelu_func(batch_size, seq_len, hidden_size, dtype, func):
     if my_op.IsSupported():
         t = my_op.Profile()
         print(
-            dtype,
-            batch_size,
-            seq_len,
-            hidden_size,
-            f,
+            f"{func:<50} {dtype}  batch_size={batch_size:<4} seq_len={seq_len:<4} hidden_size={hidden_size:<4}",
             f"{t*1000:.2f} us",
             f"{(x.size*2+bias.size)*x.itemsize*1e3/t/1e9:.2f} GB/s",
         )
