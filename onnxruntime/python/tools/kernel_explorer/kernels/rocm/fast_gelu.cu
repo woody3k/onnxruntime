@@ -101,7 +101,7 @@ class FastGeluTunable : public IKernelExplorer {
   REGISTER_OP_FOR_ALL_VEC_SIZE(name, type, 448)           \
   REGISTER_OP_FOR_ALL_VEC_SIZE(name, type, 512)
 
-#define REGISTER_TUNABLE_OP(name, type)                                    \
+#define REGISTER_OP_TYPED(name, type)                                      \
   py::class_<name<type>>(m, #name "_" #type)                               \
       .def(py::init<DeviceArray&, DeviceArray&, DeviceArray&, int, int>()) \
       .def("SetRepeats", &name<type>::SetRepeats)                          \
@@ -114,13 +114,13 @@ void InitFastGelu(py::module m) {
   REGISTER_OP_FOR_ALL_THREADS_PER_BLOCK(FastGelu, float);
   REGISTER_OP_FOR_ALL_THREADS_PER_BLOCK(FastGelu, double);
 
-  REGISTER_TUNABLE_OP(FastGeluTunable, half);
-  REGISTER_TUNABLE_OP(FastGeluTunable, float);
-  REGISTER_TUNABLE_OP(FastGeluTunable, double);
+  REGISTER_OP_TYPED(FastGeluTunable, half);
+  REGISTER_OP_TYPED(FastGeluTunable, float);
+  REGISTER_OP_TYPED(FastGeluTunable, double);
 
-  REGISTER_TUNABLE_OP(FastGeluStaticSelection, half);
-  REGISTER_TUNABLE_OP(FastGeluStaticSelection, float);
-  REGISTER_TUNABLE_OP(FastGeluStaticSelection, double);
+  REGISTER_OP_TYPED(FastGeluStaticSelection, half);
+  REGISTER_OP_TYPED(FastGeluStaticSelection, float);
+  REGISTER_OP_TYPED(FastGeluStaticSelection, double);
 }
 
 }  // namespace onnxruntime
