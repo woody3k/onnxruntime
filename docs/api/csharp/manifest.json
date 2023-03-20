@@ -81,7 +81,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.InferenceSession.html",
-          "hash": "P0v4DCyz7zvfXaVrFAIIcjCrQJcFTmn/vNJibxP3qDo="
+          "hash": "y40/UFlpvlRJHOXfQcWmIktbi2nidCO7U9MzBW89bAE="
         }
       },
       "is_incremental": true,
@@ -201,7 +201,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.OrtApi.html",
-          "hash": "sAtiOlRPkaoRheEH0Hs6p5PUIvrmf5sGMeV33rM5v3Q="
+          "hash": "kcldkKNm2tP5YLLOId862EIO2K7/UXkzwtud6lemh5g="
         }
       },
       "is_incremental": true,
@@ -237,7 +237,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.OrtCUDAProviderOptions.html",
-          "hash": "TVpuU01G97YUgjKRuNHk+PzutcA8EdIpyqKxuaMU5Zk="
+          "hash": "1ZFtJ8T8iTc3KDRSNh+I47ouPaDF0wOXxMrxh5mEU+Q="
         }
       },
       "is_incremental": true,
@@ -249,7 +249,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.OrtEnv.html",
-          "hash": "wWh+HZ8oHuyPvUYGFPQHTC4BKbjwvUQAm6souqXVnBU="
+          "hash": "Ro/XaAl2HijdHqIZf3MoqxT9rycnigckSrw151ajnXM="
         }
       },
       "is_incremental": true,
@@ -286,6 +286,18 @@
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.OrtLanguageProjection.html",
           "hash": "dDi5NL8vg102FAwsZHLIXzA8q5uJyT+ddQ8SHbDp6S8="
+        }
+      },
+      "is_incremental": true,
+      "version": ""
+    },
+    {
+      "type": "ManagedReference",
+      "source_relative_path": "api/Microsoft.ML.OnnxRuntime.OrtLoggingFunction.yml",
+      "output": {
+        ".html": {
+          "relative_path": "api/Microsoft.ML.OnnxRuntime.OrtLoggingFunction.html",
+          "hash": "+yrBKP0BXhHxp00b3MNeZMyOYTF9ZP1dVEF5J+D/W0o="
         }
       },
       "is_incremental": true,
@@ -345,7 +357,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.OrtTensorRTProviderOptions.html",
-          "hash": "uTSFfoL+Q/kUlw6LcuEOl3No4JfkCw4+eiyfELb4THU="
+          "hash": "mmsRI0ZVtiDO+4UhWtTvlatNDM2fBHv6WBa+wJzXlR8="
         }
       },
       "is_incremental": true,
@@ -393,7 +405,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.RunOptions.html",
-          "hash": "o1Ixt/L59R92AXuO9u+AcSesGcpptSQU4Rk8ihtL/pc="
+          "hash": "rI8D4rpRajKcZdm9ShDdZuT8YaeHglU3N4iRTSzYW9c="
         }
       },
       "is_incremental": true,
@@ -561,7 +573,7 @@
       "output": {
         ".html": {
           "relative_path": "api/Microsoft.ML.OnnxRuntime.html",
-          "hash": "cJW7ywORI8Dbb97+DSeaDVXbbRQ7SHrQsKz164PEMlE="
+          "hash": "K0sbdogBoLbinTNTTLb+ouJ5JIM+1vJ2HAWLE/6yMa8="
         }
       },
       "is_incremental": true,
@@ -576,7 +588,7 @@
       "output": {
         ".html": {
           "relative_path": "api/index.html",
-          "hash": "gLBc9YMVpBp2V2tjf2lZFAkQ0LXgmfkL9J9GsO4w1RU="
+          "hash": "3vT55LqbeCdaduBOG2v72qojMl6dmU7zjEBhSmP+Rfg="
         }
       },
       "is_incremental": true,
@@ -588,7 +600,7 @@
       "output": {
         ".html": {
           "relative_path": "api/toc.html",
-          "hash": "aBxI7YgpyFu6Ni0AjAwEF/8wF6CIEFYf6eElSh/qYEk="
+          "hash": "4DZsfPXi9bQ875Swoz+KhcdA4VZNYKiXDVaTS0o+ams="
         }
       },
       "is_incremental": false,
@@ -600,7 +612,7 @@
       "output": {
         ".html": {
           "relative_path": "index.html",
-          "hash": "n2RUbBdh2z/fuQOR07HuJsKC4FzLJGdgVZmAits2sTg="
+          "hash": "sPuuf9/lKTeQUTuKWHuN5+htA7HFkxg4/mvrcBDubg4="
         }
       },
       "is_incremental": true,
@@ -637,8 +649,8 @@
         "ManagedReferenceDocumentProcessor": {
           "can_incremental": true,
           "incrementalPhase": "build",
-          "total_file_count": 48,
-          "skipped_file_count": 48
+          "total_file_count": 49,
+          "skipped_file_count": 49
         },
         "TocDocumentProcessor": {
           "can_incremental": false,

@@ -5,9 +5,11 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
-    <title>ONNX Runtime C# API Documentation </title>
+    <title>Delegate OrtLoggingFunction
+   </title>
     <meta name="viewport" content="width=device-width">
-    <meta name="title" content="ONNX Runtime C# API Documentation ">
+    <meta name="title" content="Delegate OrtLoggingFunction
+   ">
     <meta name="generator" content="docfx 2.59.3.0">
     
     <link rel="shortcut icon" href="../favicon.ico">
@@ -66,11 +68,61 @@
         </div>
         <div class="article row grid-right">
           <div class="col-md-10">
-            <article class="content wrap" id="_content" data-uid="">
-<h1 id="onnx-runtime-c-api-documentation">ONNX Runtime C# API Documentation</h1>
-
-<h3 id="microsoftmlonnxruntime"><a href="./Microsoft.ML.OnnxRuntime.html">Microsoft.ML.OnnxRuntime</a></h3>
-<h3 id="microsoftmlonnxruntimetensors"><a href="./Microsoft.ML.OnnxRuntime.Tensors.html">Microsoft.ML.OnnxRuntime.Tensors</a></h3>
+            <article class="content wrap" id="_content" data-uid="Microsoft.ML.OnnxRuntime.OrtLoggingFunction">
+  
+  
+  <h1 id="Microsoft_ML_OnnxRuntime_OrtLoggingFunction" data-uid="Microsoft.ML.OnnxRuntime.OrtLoggingFunction" class="text-break">Delegate OrtLoggingFunction
+  </h1>
+  <div class="markdown level0 summary"></div>
+  <div class="markdown level0 conceptual"></div>
+  <h6><strong>Namespace</strong>: <a class="xref" href="Microsoft.ML.OnnxRuntime.html">Microsoft.ML.OnnxRuntime</a></h6>
+  <h6><strong>Assembly</strong>: cs.temp.dll.dll</h6>
+  <h5 id="Microsoft_ML_OnnxRuntime_OrtLoggingFunction_syntax">Syntax</h5>
+  <div class="codewrapper">
+    <pre><code class="lang-csharp hljs">public delegate void OrtLoggingFunction(IntPtr param, OrtLoggingLevel severity, string category, string logid, string code_location, string message);</code></pre>
+  </div>
+  <h5 class="parameters">Parameters</h5>
+  <table class="table table-bordered table-striped table-condensed">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Name</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="xref">IntPtr</span></td>
+        <td><span class="parametername">param</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><a class="xref" href="Microsoft.ML.OnnxRuntime.OrtLoggingLevel.html">OrtLoggingLevel</a></td>
+        <td><span class="parametername">severity</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><span class="xref">System.String</span></td>
+        <td><span class="parametername">category</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><span class="xref">System.String</span></td>
+        <td><span class="parametername">logid</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><span class="xref">System.String</span></td>
+        <td><span class="parametername">code_location</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><span class="xref">System.String</span></td>
+        <td><span class="parametername">message</span></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
 </article>
           </div>
           
@@ -78,9 +130,6 @@
             <div class="sideaffix">
               <div class="contribution">
                 <ul class="nav">
-                  <li>
-                    <a href="https://github.com/woody3k/onnxruntime/blob/main/csharp/ApiDocs/api/index.md/#L1" class="contribution-link">Improve this Doc</a>
-                  </li>
                 </ul>
               </div>
               <nav class="bs-docs-sidebar hidden-print hidden-xs hidden-sm affix" id="affix">

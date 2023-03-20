@@ -73,7 +73,11 @@
   
   <h1 id="Microsoft_ML_OnnxRuntime_OrtEnv" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv" class="text-break">Class OrtEnv
   </h1>
-  <div class="markdown level0 summary"><p>This class initializes the process-global ONNX Runtime environment instance (OrtEnv)</p>
+  <div class="markdown level0 summary"><p>This class initializes the process-global ONNX Runtime environment instance (OrtEnv).
+The singleton class OrtEnv contains the process-global ONNX Runtime environment.
+It sets up logging, creates system wide thread-pools (if Thread Pool options are provided)
+and other necessary things for OnnxRuntime to function. Create or access OrtEnv by calling
+the Instance() method. Call this method before doing anything else in your application.</p>
 </div>
   <div class="markdown level0 conceptual"></div>
   <div class="inheritance">
@@ -87,8 +91,74 @@
   <div class="codewrapper">
     <pre><code class="lang-csharp hljs">public sealed class OrtEnv : SafeHandle</code></pre>
   </div>
+  <h3 id="constructors">Constructors
+  </h3>
+  
+  
+  <a id="Microsoft_ML_OnnxRuntime_OrtEnv__ctor_" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.#ctor*"></a>
+  <h4 id="Microsoft_ML_OnnxRuntime_OrtEnv__ctor_Microsoft_ML_OnnxRuntime_OrtLoggingFunction_Microsoft_ML_OnnxRuntime_LogLevel_IntPtr_" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.#ctor(Microsoft.ML.OnnxRuntime.OrtLoggingFunction,Microsoft.ML.OnnxRuntime.LogLevel,IntPtr)">OrtEnv(OrtLoggingFunction, LogLevel, IntPtr)</h4>
+  <div class="markdown level1 summary"></div>
+  <div class="markdown level1 conceptual"></div>
+  <h5 class="decalaration">Declaration</h5>
+  <div class="codewrapper">
+    <pre><code class="lang-csharp hljs">public OrtEnv(OrtLoggingFunction logging_function, LogLevel log_level, IntPtr log_param)</code></pre>
+  </div>
+  <h5 class="parameters">Parameters</h5>
+  <table class="table table-bordered table-striped table-condensed">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Name</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a class="xref" href="Microsoft.ML.OnnxRuntime.OrtLoggingFunction.html">OrtLoggingFunction</a></td>
+        <td><span class="parametername">logging_function</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><a class="xref" href="Microsoft.ML.OnnxRuntime.LogLevel.html">LogLevel</a></td>
+        <td><span class="parametername">log_level</span></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><span class="xref">IntPtr</span></td>
+        <td><span class="parametername">log_param</span></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
   <h3 id="properties">Properties
   </h3>
+  
+  
+  <a id="Microsoft_ML_OnnxRuntime_OrtEnv_EnvLogLevel_" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.EnvLogLevel*"></a>
+  <h4 id="Microsoft_ML_OnnxRuntime_OrtEnv_EnvLogLevel" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.EnvLogLevel">EnvLogLevel</h4>
+  <div class="markdown level1 summary"><p>Get/Set log level property of OrtEnv instance</p>
+</div>
+  <div class="markdown level1 conceptual"></div>
+  <h5 class="decalaration">Declaration</h5>
+  <div class="codewrapper">
+    <pre><code class="lang-csharp hljs">public LogLevel EnvLogLevel { get; set; }</code></pre>
+  </div>
+  <h5 class="propertyValue">Property Value</h5>
+  <table class="table table-bordered table-striped table-condensed">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a class="xref" href="Microsoft.ML.OnnxRuntime.LogLevel.html">LogLevel</a></td>
+        <td><p>env log level</p>
+</td>
+      </tr>
+    </tbody>
+  </table>
   
   
   <a id="Microsoft_ML_OnnxRuntime_OrtEnv_IsInvalid_" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.IsInvalid*"></a>
@@ -206,10 +276,38 @@ so as to enable sharing across all sessions using the OrtEnv instance</p>
   </table>
   
   
+  <a id="Microsoft_ML_OnnxRuntime_OrtEnv_GetVersionString_" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.GetVersionString*"></a>
+  <h4 id="Microsoft_ML_OnnxRuntime_OrtEnv_GetVersionString" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.GetVersionString">GetVersionString()</h4>
+  <div class="markdown level1 summary"><p>This function returns the onnxruntime version string</p>
+</div>
+  <div class="markdown level1 conceptual"></div>
+  <h5 class="decalaration">Declaration</h5>
+  <div class="codewrapper">
+    <pre><code class="lang-csharp hljs">public string GetVersionString()</code></pre>
+  </div>
+  <h5 class="returns">Returns</h5>
+  <table class="table table-bordered table-striped table-condensed">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="xref">System.String</span></td>
+        <td><p>version string</p>
+</td>
+      </tr>
+    </tbody>
+  </table>
+  
+  
   <a id="Microsoft_ML_OnnxRuntime_OrtEnv_Instance_" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.Instance*"></a>
   <h4 id="Microsoft_ML_OnnxRuntime_OrtEnv_Instance" data-uid="Microsoft.ML.OnnxRuntime.OrtEnv.Instance">Instance()</h4>
   <div class="markdown level1 summary"><p>Returns an instance of OrtEnv
-It returns the same instance on every call - <code>OrtEnv</code> is singleton</p>
+It returns the same instance on every call - <code>OrtEnv</code> is singleton
+Exception caching: May throw an exception on every call, if the <code>OrtEnv</code> constructor threw an exception</p>
 </div>
   <div class="markdown level1 conceptual"></div>
   <h5 class="decalaration">Declaration</h5>
