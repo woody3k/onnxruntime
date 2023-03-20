@@ -114,7 +114,7 @@ if (onnxruntime_BUILD_WEBASSEMBLY_STATIC_LIB)
       re2::re2
     )
 
-    if (onnxruntime_ENABLE_TRAINING OR onnxruntime_ENABLE_TRAINING_OPS)
+    if (onnxruntime_ENABLE_TRAINING)
       bundle_static_library(onnxruntime_webassembly tensorboard)
     endif()
 
@@ -192,7 +192,7 @@ else()
     target_link_libraries(onnxruntime_webassembly PRIVATE XNNPACK)
   endif()
 
-  if (onnxruntime_ENABLE_TRAINING OR onnxruntime_ENABLE_TRAINING_OPS)
+  if (onnxruntime_ENABLE_TRAINING)
     target_link_libraries(onnxruntime_webassembly PRIVATE tensorboard)
   endif()
 
@@ -203,13 +203,13 @@ else()
                         -s \"EXPORTED_FUNCTIONS=_malloc,_free\" \
                         -s MAXIMUM_MEMORY=4294967296 \
                         -s WASM=1 \
-                        -s NO_EXIT_RUNTIME=0 \
+                        -s EXIT_RUNTIME=0 \
                         -s ALLOW_MEMORY_GROWTH=1 \
                         -s MODULARIZE=1 \
                         -s EXPORT_ALL=0 \
                         -s LLD_REPORT_UNDEFINED \
                         -s VERBOSE=0 \
-                        -s NO_FILESYSTEM=1 \
+                        -s FILESYSTEM=0 \
                         ${WASM_API_EXCEPTION_CATCHING} \
                         --no-entry")
 

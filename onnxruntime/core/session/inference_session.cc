@@ -65,6 +65,10 @@
 #include "core/framework/customregistry.h"
 #include "core/session/custom_ops.h"
 #endif
+#ifdef ENABLE_TRAINING
+#include "core/framework/partial_graph_execution_state.h"
+#include "core/framework/stream_execution_context.h"
+#endif
 
 using namespace ONNX_NAMESPACE;
 using namespace onnxruntime::common;
@@ -506,30 +510,6 @@ common::Status InferenceSession::RegisterExecutionProvider(const std::shared_ptr
     }
   }
 
-  if (provider_type == onnxruntime::kCudaExecutionProvider) {
-    // Parallel execution mode does not support the CUDA EP
-    if (session_options_.execution_mode != ExecutionMode::ORT_SEQUENTIAL) {
-      LOGS(*session_logger_, WARNING)
-          << "Parallel execution mode does not support the CUDA Execution Provider. "
-          << "So making the execution mode sequential for this session since it uses the CUDA Execution Provider.";
-      session_options_.execution_mode = ExecutionMode::ORT_SEQUENTIAL;
-    }
-
-    auto trt_ep = execution_providers_.Get(kTensorrtExecutionProvider);
-    if (trt_ep) {
-      ORT_RETURN_IF_ERROR(p_exec_provider->SetComputeStream(trt_ep->GetComputeStream()));
-    }
-  }
-
-  if (provider_type == onnxruntime::kCannExecutionProvider) {
-    if (session_options_.execution_mode != ExecutionMode::ORT_SEQUENTIAL) {
-      LOGS(*session_logger_, WARNING)
-          << "Parallel execution mode does not support the CANN Execution Provider. "
-          << "So making the execution mode sequential for this session since it uses the CANN Execution Provider.";
-      session_options_.execution_mode = ExecutionMode::ORT_SEQUENTIAL;
-    }
-  }
-
   // if any EPs do not support concurrent calls to Run we add locking around graph execution
   if (p_exec_provider->ConcurrentRunSupported() == false) {
     is_concurrent_run_supported_ = false;
@@ -613,6 +593,8 @@ common::Status InferenceSession::SaveToOrtFormat(const PathString& filepath) con
   flatbuffers::Offset<fbs::KernelTypeStrResolver> fbs_kernel_type_str_resolver;
   KernelTypeStrResolver kernel_type_str_resolver{};
   ORT_RETURN_IF_ERROR(kernel_type_str_resolver.RegisterGraphNodeOpSchemas(model_->MainGraph()));
+  ORT_RETURN_IF_ERROR(standalone::RegisterCustomOpNodeSchemas(kernel_type_str_resolver, model_->MainGraph()));
+
   for (const auto* op_schema : saved_runtime_optimization_produced_node_op_schemas_) {
     ORT_RETURN_IF_ERROR(kernel_type_str_resolver.RegisterOpSchema(*op_schema));
   }
@@ -1035,7 +1017,7 @@ Status InferenceSession::LoadOrtModelWithLoader(std::function<Status()> load_ort
   // TODO This change was introduced in 1.13. Remove this note a few releases later, e.g., 1.15.
   constexpr auto* kOrtFormatVersion5BreakingChangeNote =
       "This build doesn't support ORT format models older than version 5. "
-      "See: https://github.com/microsoft/onnxruntime/blob/rel-1.13.0/docs/ORT_Format_Update_in_1.13.md";
+      "See: https://github.com/microsoft/onnxruntime/blob/rel-1.14.0/docs/ORT_Format_Update_in_1.13.md";
 
   ORT_RETURN_IF(!is_supported,
                 "The ORT format model version [", fbs_ort_model_version->string_view(),
@@ -1344,14 +1326,12 @@ common::Status InferenceSession::Initialize() {
     session_state_ = std::make_unique<SessionState>(
         model_->MainGraph(),
         execution_providers_,
-        session_options_.enable_mem_pattern && session_options_.execution_mode == ExecutionMode::ORT_SEQUENTIAL,
         GetIntraOpThreadPoolToUse(),
         GetInterOpThreadPoolToUse(),
         data_transfer_mgr_,
         *session_logger_,
         session_profiler_,
-        session_options_.use_deterministic_compute,
-        session_options_.enable_mem_reuse,
+        session_options_,
         prepacked_weights_container_);
 
 #if !defined(ORT_MINIMAL_BUILD) && defined(ORT_MEMORY_PROFILE)
@@ -1494,7 +1474,6 @@ common::Status InferenceSession::Initialize() {
 
     ORT_RETURN_IF_ERROR_SESSIONID_(
         session_state_->FinalizeSessionState(model_location_, kernel_registry_manager_,
-                                             session_options_,
                                              // need to keep the initializers if saving the optimized model
                                              !saving_model,
                                              saving_ort_format));
@@ -1523,6 +1502,14 @@ common::Status InferenceSession::Initialize() {
         ORT_RETURN_IF_ERROR_SESSIONID_(Model::Save(*model_, session_options_.optimized_model_filepath));
       }
     }
+
+    std::vector<TuningResults> tuning_results;
+    bool found_tuning_results = false;
+    ORT_RETURN_IF_ERROR_SESSIONID_(inference_session_utils::ParseTuningResultsFromModelMetadata(
+        model_metadata_, tuning_results, found_tuning_results));
+    if (found_tuning_results) {
+      ORT_RETURN_IF_ERROR_SESSIONID_(SetTuningResults(tuning_results));
+    }
 #endif  // !defined(ORT_MINIMAL_BUILD)
 
     // Resolve memory pattern flags of the main graph and subgraph session states
@@ -1535,12 +1522,16 @@ common::Status InferenceSession::Initialize() {
       std::vector<uint8_t>().swap(ort_format_model_bytes_data_holder_);
     }
 
+    // once the model is saved, we may remove unnecessary attributes for inference
+    session_state_->PruneRemovableAttributes();
+
     // and log telemetry
     bool model_has_fp16_inputs = ModelHasFP16Inputs(graph);
     env.GetTelemetryProvider().LogSessionCreation(
         session_id_, model_->IrVersion(), model_->ProducerName(), model_->ProducerVersion(), model_->Domain(),
         model_->MainGraph().DomainToVersionMap(), model_->MainGraph().Name(), model_->MetaData(),
         telemetry_.event_name_, execution_providers_.GetIds(), model_has_fp16_inputs);
+
     LOGS(*session_logger_, INFO) << "Session successfully initialized.";
   }
   ORT_CATCH(const NotImplementedException& ex) {
@@ -1843,7 +1834,9 @@ Status InferenceSession::PartialRun(onnxruntime::RunOptions& run_options,
     }
 #endif
     ORT_CHECK_AND_SET_RETVAL(utils::ExecutePartialGraph(*session_state_, feeds_fetches_manager, feeds, fetches,
-                                                        run_logger, state, cache, partial_graph_index));
+                                                        run_logger, state, cache, run_options.terminate,
+                                                        partial_graph_index,
+                                                        /*parent stream*/ nullptr));
   }
   ORT_CATCH(const std::exception& e) {
     ORT_HANDLE_EXCEPTION([&]() {
@@ -1989,9 +1982,12 @@ Status InferenceSession::Run(const RunOptions& run_options,
         ORT_CHECK_AND_SET_RETVAL(start_func());
       }
 
-#if !defined(ORT_MINIMAL_BUILD)
+#ifdef ENABLE_TRAINING
       if (run_options.only_execute_path_to_fetches) {
-        session_state_->UpdateToBeExecutedNodes(feeds_fetches_manager.GetFeedsFetchesInfo().fetches_mlvalue_idxs);
+        // TODO: this method is not thread safe, if multiple Run happened in parallel we might hit race condition issue.
+        // currently it only used in training, there is no parallel run execution in training so it is ok.
+        // but it is better we can fix it with a better solution.
+        session_state_->UpdateToBeExecutedRange(feeds_fetches_manager.GetFeedsFetchesInfo().fetches_mlvalue_idxs);
       }
 #endif
 
@@ -2001,8 +1997,8 @@ Status InferenceSession::Run(const RunOptions& run_options,
 #endif
 
       ORT_CHECK_AND_SET_RETVAL(utils::ExecuteGraph(*session_state_, feeds_fetches_manager, feeds, *p_fetches,
-                                                   session_options_.execution_mode, run_options.terminate, run_logger,
-                                                   run_options.only_execute_path_to_fetches));
+                                                   session_options_.execution_mode,
+                                                   run_options, run_logger));
     }
     ORT_CATCH(const std::exception& e) {
       ORT_HANDLE_EXCEPTION([&]() {
@@ -2015,7 +2011,8 @@ Status InferenceSession::Run(const RunOptions& run_options,
 
     // info all execution providers InferenceSession:Run ended
     for (auto* xp : exec_providers_to_stop) {
-      auto status = xp->OnRunEnd(run_options.synchronize_execution_providers);
+      bool synchronize_execution_providers = run_options.config_options.GetConfigOrDefault(kOrtRunOptionsConfigDisableSynchronizeExecutionProviders, "0") == "0";
+      auto status = xp->OnRunEnd(synchronize_execution_providers);
       ORT_CHECK_AND_SET_RETVAL(status);
     }
 
@@ -2198,6 +2195,50 @@ std::string InferenceSession::EndProfiling() {
 const profiling::Profiler& InferenceSession::GetProfiling() const {
   return session_profiler_;
 }
+
+#if !defined(ORT_MINIMAL_BUILD)
+std::vector<TuningResults> InferenceSession::GetTuningResults() const {
+  std::vector<TuningResults> ret;
+  for (const auto& provider : execution_providers_) {
+    const auto* tuning_ctx = provider->GetTuningContext();
+    if (tuning_ctx != nullptr) {
+      ret.emplace_back(tuning_ctx->GetTuningResults());
+    }
+  }
+  return ret;
+}
+
+Status InferenceSession::SetTuningResults(const std::vector<TuningResults>& trs, bool error_on_invalid) {
+  std::string msg;
+
+  for (size_t i = 0; i < trs.size(); i++) {
+    const auto& tr = trs[i];
+    auto* provider = execution_providers_.Get(tr.ep);
+    if (provider == nullptr) {
+      msg = MakeString("Cannot find execution provider ", tr.ep);
+      ORT_RETURN_IF(error_on_invalid, msg);
+      LOGS(*session_logger_, WARNING) << msg;
+      continue;
+    }
+
+    auto* tuning_ctx = provider->GetTuningContext();
+    if (tuning_ctx == nullptr) {
+      msg = MakeString("Invalid TuningResults (index=", i, "). ", tr.ep, " does not support TunableOp.");
+      ORT_RETURN_IF(error_on_invalid, msg);
+      LOGS(*session_logger_, WARNING) << msg;
+      continue;
+    }
+
+    auto status = tuning_ctx->LoadTuningResults(tr);
+    if (!status.IsOK()) {
+      msg = MakeString("Failed to load TuningResults (index=", i, "). Reason: ", status.ErrorMessage());
+      ORT_RETURN_IF(error_on_invalid, msg);
+      LOGS(*session_logger_, WARNING) << msg;
+    }
+  }
+  return Status::OK();
+}
+#endif  // !defined(ORT_MINIMAL_BUILD)
 
 AllocatorPtr InferenceSession::GetAllocator(const OrtMemoryInfo& mem_info) const {
   return session_state_->GetAllocator(mem_info);
